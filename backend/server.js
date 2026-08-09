@@ -18,6 +18,15 @@ if (process.env.OPENAI_API_KEY) {
 app.use(cors());
 app.use(express.json());
 
+// Health check endpoint
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', message: 'GitHub OpenSource Contribution Finder API is running' });
+});
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 // GitHub API search for issues
 app.post('/api/search-issues', async (req, res) => {
   try {

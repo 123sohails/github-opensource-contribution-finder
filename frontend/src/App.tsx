@@ -32,7 +32,9 @@ function App() {
 
     try {
       const skillsArray = skills.split(',').map(s => s.trim()).filter(s => s)
-      const response = await fetch('http://localhost:5000/api/search-issues', {
+      console.log('Searching for skills:', skillsArray, 'with limit:', resultsLimit)
+      
+      const response = await fetch('https://github-opensource-contribution-finder.onrender.com/api/search-issues', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -40,15 +42,20 @@ function App() {
         body: JSON.stringify({ skills: skillsArray, limit: resultsLimit }),
       })
 
+      console.log('Response status:', response.status)
+      
       if (!response.ok) {
-        throw new Error('Failed to fetch issues')
+        const errorData = await response.json()
+        console.error('API Error:', errorData)
+        throw new Error(errorData.error || 'Failed to fetch issues')
       }
 
       const data = await response.json()
+      console.log('API Response:', data)
       setIssues(data.issues)
     } catch (err) {
+      console.error('Search error:', err)
       setError('Failed to search for issues. Please try again.')
-      console.error(err)
     } finally {
       setLoading(false)
     }

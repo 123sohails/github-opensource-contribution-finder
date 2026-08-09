@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import './App.css'
 
 interface Issue {
@@ -19,6 +19,30 @@ function App() {
   const [issues, setIssues] = useState<Issue[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>('')
+  const [backendStatus, setBackendStatus] = useState<'checking' | 'healthy' | 'unhealthy'>('checking')
+
+  // Check if backend is healthy before making API calls
+  const checkBackendHealth = async (): Promise<boolean> => {
+    try {
+      const response = await fetch('https://github-opensource-contribution-finder.onrender.com/health')
+      return response.ok
+    } catch {
+      return false
+    }
+  }
+
+  // Check backend health on component mount
+  useEffect(() => {
+    const checkHealth = async () => {
+      const isHealthy = await checkBackendHealth()
+      setBackendStatus(isHealthy ? 'healthy' : 'unhealthy')
+    }
+    checkHealth()
+    
+    // Recheck every 30 seconds
+    const interval = setInterval(checkHealth, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   const handleSearch = async () => {
     if (!skills.trim()) {
@@ -30,35 +54,61 @@ function App() {
     setError('')
     setIssues([])
 
-    try {
-      const skillsArray = skills.split(',').map(s => s.trim()).filter(s => s)
-      console.log('Searching for skills:', skillsArray, 'with limit:', resultsLimit)
-      
-      const response = await fetch('https://github-opensource-contribution-finder.onrender.com/api/search-issues', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ skills: skillsArray, limit: resultsLimit }),
-      })
-
-      console.log('Response status:', response.status)
-      
-      if (!response.ok) {
-        const errorData = await response.json()
-        console.error('API Error:', errorData)
-        throw new Error(errorData.error || 'Failed to fetch issues')
-      }
-
-      const data = await response.json()
-      console.log('API Response:', data)
-      setIssues(data.issues)
-    } catch (err) {
-      console.error('Search error:', err)
-      setError('Failed to search for issues. Please try again.')
-    } finally {
+    // Check backend health first
+    const isBackendHealthy = await checkBackendHealth()
+    if (!isBackendHealthy) {
+      setError('Backend service is starting up. Please try again in 30 seconds.')
       setLoading(false)
+      return
     }
+
+    // Retry logic for deployment timing issues
+    const maxRetries = 3
+    const retryDelay = 1000 // 1 second between retries
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const skillsArray = skills.split(',').map(s => s.trim()).filter(s => s)
+        console.log(`Searching for skills:`, skillsArray, `with limit:`, resultsLimit, `(Attempt ${attempt}/${maxRetries})`)
+        
+        const response = await fetch('https://github-opensource-contribution-finder.onrender.com/api/search-issues', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ skills: skillsArray, limit: resultsLimit }),
+        })
+
+        console.log('Response status:', response.status)
+        
+        if (!response.ok) {
+          const errorData = await response.json()
+          console.error('API Error:', errorData)
+          throw new Error(errorData.error || 'Failed to fetch issues')
+        }
+
+        const data = await response.json()
+        console.log('API Response:', data)
+        setIssues(data.issues)
+        return // Success - exit the retry loop
+      } catch (err) {
+        console.error(`Search error (attempt ${attempt}/${maxRetries}):`, err)
+        
+        if (attempt === maxRetries) {
+          // Last attempt failed
+          if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+            setError('Backend service is starting up. Please try again in 30 seconds.')
+          } else {
+            setError('Failed to search for issues. Please try again.')
+          }
+        } else {
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, retryDelay))
+        }
+      }
+    }
+    
+    setLoading(false)
   }
 
   return (
@@ -66,6 +116,12 @@ function App() {
       <div className="container">
         <h1>GitHub OpenSource Contribution Finder</h1>
         <p className="subtitle">Find open-source issues that match your skills</p>
+        
+        <div className={`backend-status ${backendStatus}`}>
+          {backendStatus === 'checking' && '⏳ Checking backend status...'}
+          {backendStatus === 'healthy' && '✅ Backend operational'}
+          {backendStatus === 'unhealthy' && '⚠️ Backend starting up - please wait'}
+        </div>
         
         <div className="search-section">
           <input

@@ -96,7 +96,8 @@ function App() {
         
         if (attempt === maxRetries) {
           // Last attempt failed
-          if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+          if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
             setError('Backend service is starting up. Please try again in 30 seconds.')
           } else {
             setError('Failed to search for issues. Please try again.')
